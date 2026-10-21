@@ -50,7 +50,7 @@ An AI-powered farming assistant built with Next.js, providing farmers with intel
    ```env
    # Google Gemini AI (Required for chat)
    GEMINI_API_KEY=your_gemini_api_key_here
-   GEMINI_MODEL=gemini-pro
+   GEMINI_MODEL=gemini-2.5-flash
    
    # OpenWeather API (Optional - uses mock data if not provided)
    OPENWEATHER_API_KEY=your_openweather_api_key_here
@@ -96,7 +96,7 @@ Go to your Vercel dashboard → Project Settings → Environment Variables and a
 
 ```
 GEMINI_API_KEY=your_gemini_api_key_here
-GEMINI_MODEL=gemini-pro
+GEMINI_MODEL=gemini-2.5-flash
 OPENWEATHER_API_KEY=your_openweather_api_key_here
 ROBOFLOW_API_KEY=your_roboflow_api_key_here
 ROBOFLOW_MODEL=your_model_id
