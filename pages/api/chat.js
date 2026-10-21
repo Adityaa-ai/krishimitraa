@@ -1,177 +1,174 @@
+
 import nc from 'next-connect';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenAI, Type } from '@google/genai';
 
 const handler = nc();
 
-// Initialize Gemini AI
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ 
-  model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
-  generationConfig: {
-    responseMimeType: "application/json",
-  }
-});
-
-// JSON Schema for structured response
 const responseSchema = {
-  type: "object",
+  type: Type.OBJECT,
   properties: {
     advice_text: {
-      type: "string",
-      description: "Detailed farming advice based on the user's question and location"
+      type: Type.STRING,
+      description: 'Practical farming advice in the requested language',
     },
     fertilizer: {
-      type: "string", 
-      description: "Recommended fertilizer or soil amendment for the specific crop and conditions"
+      type: Type.STRING,
+      description: 'Cautious fertilizer and soil amendment guidance',
     },
     pest_flags: {
-      type: "array",
-      items: {
-        type: "string"
-      },
-      description: "Array of potential pests or diseases to watch out for"
+      type: Type.ARRAY,
+      items: { type: Type.STRING },
     },
     suggestions: {
-      type: "array",
-      items: {
-        type: "string"
-      },
-      description: "Array of actionable farming suggestions and best practices"
-    }
+      type: Type.ARRAY,
+      items: { type: Type.STRING },
+    },
   },
-  required: ["advice_text", "fertilizer", "pest_flags", "suggestions"]
+  required: ['advice_text', 'fertilizer', 'pest_flags', 'suggestions'],
 };
 
 handler.post(async (req, res) => {
+  const { message, lang, lat, lon, crop } = req.body || {};
+
+  if (typeof message !== 'string' || !message.trim()) {
+    return res.status(400).json({
+      ok: false,
+      error: 'Please enter a farming question.',
+    });
+  }
+
+  if (message.length > 4000) {
+    return res.status(400).json({
+      ok: false,
+      error: 'Please keep your question under 4000 characters.',
+    });
+  }
+
+  if (
+    lat != null &&
+    (typeof lat !== 'number' || !Number.isFinite(lat) || lat < -90 || lat > 90)
+  ) {
+    return res.status(400).json({
+      ok: false,
+      error: 'Invalid latitude.',
+    });
+  }
+
+  if (
+    lon != null &&
+    (typeof lon !== 'number' || !Number.isFinite(lon) || lon < -180 || lon > 180)
+  ) {
+    return res.status(400).json({
+      ok: false,
+      error: 'Invalid longitude.',
+    });
+  }
+
+  const apiKey = process.env.GEMINI_API_KEY;
+
+  if (!apiKey) {
+    return res.status(503).json({
+      ok: false,
+      error: 'AI Assistant is not configured. Check the server environment.',
+    });
+  }
+
   try {
-    // Validate request method
-    if (req.method !== 'POST') {
-      return res.status(405).json({ error: 'Method not allowed' });
+    const ai = new GoogleGenAI({ apiKey });
+    const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+
+    const prompt = `
+You are KrishiSethuu, an agricultural information assistant for farmers,
+especially in India.
+
+Give practical, clear farming guidance in the requested language.
+Never invent local weather, soil test results, or location facts.
+Do not invent pesticide or fertilizer dosages.
+Recommend following product labels and local agricultural department
+or agricultural university guidance.
+Explain uncertainty when details are missing.
+
+Farmer's question: ${message.trim()}
+Crop: ${crop ? String(crop).slice(0, 100) : 'Not specified'}
+Preferred language: ${lang ? String(lang).slice(0, 50) : 'English'}
+Approximate coordinates: ${
+      lat != null && lon != null ? `${lat}, ${lon}` : 'Not provided'
     }
 
-    // Validate required fields
-    const { message, lang, lat, lon, crop } = req.body;
-    
-    if (!message || typeof message !== 'string') {
-      return res.status(400).json({ 
-        error: 'Message is required and must be a string' 
-      });
-    }
+Return:
+- advice_text: helpful farming advice
+- fertilizer: cautious fertilizer or soil amendment guidance
+- pest_flags: an array of pests or diseases to monitor
+- suggestions: an array of actionable next steps
 
-    // Validate location data if provided
-    if (lat && (typeof lat !== 'number' || lat < -90 || lat > 90)) {
-      return res.status(400).json({ 
-        error: 'Latitude must be a number between -90 and 90' 
-      });
-    }
-    
-    if (lon && (typeof lon !== 'number' || lon < -180 || lon > 180)) {
-      return res.status(400).json({ 
-        error: 'Longitude must be a number between -180 and 180' 
-      });
-    }
+Treat coordinates as context only. Do not claim to have measured soil or
+confirmed a disease from this text question.
+    `.trim();
 
-    // Build context-aware prompt
-    let prompt = `You are an expert agricultural advisor. Please provide farming advice based on the following information:\n\n`;
-    prompt += `Question: ${message}\n\n`;
-    
-    if (crop) {
-      prompt += `Crop: ${crop}\n`;
-    }
-    
-    if (lat && lon) {
-      prompt += `Location: Latitude ${lat}, Longitude ${lon}\n`;
-    }
-    
-    if (lang) {
-      prompt += `Language preference: ${lang}\n`;
-    }
-    
-    prompt += `\nPlease provide your response in the following JSON format:\n`;
-    prompt += `- advice_text: Detailed farming advice\n`;
-    prompt += `- fertilizer: Recommended fertilizer or soil amendment\n`;
-    prompt += `- pest_flags: Array of potential pests/diseases to watch for\n`;
-    prompt += `- suggestions: Array of actionable farming suggestions\n\n`;
-    prompt += `Consider the location, crop type, and season when providing advice. Be specific and practical.`;
-
-    console.log('Sending request to Gemini AI with prompt:', prompt.substring(0, 200) + '...');
-
-    // Generate content with Gemini AI
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
-
-    console.log('Raw response from Gemini:', text.substring(0, 200) + '...');
-
-    let parsedResponse;
-
-    try {
-      // Try to parse the JSON response directly
-      parsedResponse = JSON.parse(text);
-      
-      // Validate that all required fields are present
-      if (!parsedResponse.advice_text || !parsedResponse.fertilizer || 
-          !Array.isArray(parsedResponse.pest_flags) || !Array.isArray(parsedResponse.suggestions)) {
-        throw new Error('Invalid response structure');
-      }
-      
-    } catch (parseError) {
-      console.warn('Failed to parse JSON response, attempting to extract JSON block:', parseError.message);
-      
-      // Try to extract JSON from the response text
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        try {
-          parsedResponse = JSON.parse(jsonMatch[0]);
-        } catch (extractError) {
-          console.warn('Failed to parse extracted JSON:', extractError.message);
-          // Fallback to raw text
-          parsedResponse = {
-            advice_text: text,
-            fertilizer: "Please consult with a local agricultural expert for specific fertilizer recommendations.",
-            pest_flags: ["Unable to identify specific pests from the response"],
-            suggestions: ["Review the advice above and consult local agricultural resources"]
-          };
-        }
-      } else {
-        // No JSON found, use raw text as fallback
-        parsedResponse = {
-          advice_text: text,
-          fertilizer: "Please consult with a local agricultural expert for specific fertilizer recommendations.",
-          pest_flags: ["Unable to identify specific pests from the response"],
-          suggestions: ["Review the advice above and consult local agricultural resources"]
-        };
-      }
-    }
-
-    console.log('Successfully processed response');
-
-    res.status(200).json({
-      ok: true,
-      data: parsedResponse
+    const result = await ai.models.generateContent({
+      model,
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema,
+      },
     });
 
-  } catch (error) {
-    console.error('Chat API error:', error);
-    
-    // Handle specific Gemini AI errors
-    if (error.message?.includes('API key')) {
-      return res.status(500).json({ 
-        error: 'Invalid API configuration',
-        message: 'Please check your GEMINI_API_KEY environment variable'
-      });
+    const responseText = result.text;
+
+    if (!responseText) {
+      throw new Error('Gemini returned an empty response.');
     }
-    
-    if (error.message?.includes('quota') || error.message?.includes('limit')) {
-      return res.status(429).json({ 
-        error: 'API quota exceeded',
-        message: 'Please try again later'
+
+    const data = JSON.parse(responseText);
+
+    if (
+      typeof data.advice_text !== 'string' ||
+      typeof data.fertilizer !== 'string' ||
+      !Array.isArray(data.pest_flags) ||
+      !Array.isArray(data.suggestions)
+    ) {
+      throw new Error('Gemini returned an invalid response format.');
+    }
+
+    return res.status(200).json({ ok: true, data });
+  } catch (error) {
+    console.error(
+      'Gemini API error:',
+      error.status || error.code || 'unknown',
+      error.message || 'No error details'
+    );
+
+    const details = String(error.message || '').toLowerCase();
+
+    if (
+      error.status === 429 ||
+      details.includes('quota') ||
+      details.includes('rate limit')
+    ) {
+      return res.status(429).json({
+        ok: false,
+        error: 'AI usage limit reached. Please try again later.',
       });
     }
 
-    res.status(500).json({ 
-      error: 'Internal server error',
-      message: error.message 
+    if (error.status === 401 || error.status === 403) {
+      return res.status(502).json({
+        ok: false,
+        error: 'Gemini authentication failed. Check your API key and permissions.',
+      });
+    }
+
+    if (error.status === 404 || details.includes('not found')) {
+      return res.status(502).json({
+        ok: false,
+        error: 'The configured Gemini model was not found. Check GEMINI_MODEL.',
+      });
+    }
+
+    return res.status(502).json({
+      ok: false,
+      error: 'The AI Assistant could not generate a response. Please try again.',
     });
   }
 });

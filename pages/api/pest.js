@@ -1,262 +1,169 @@
+
 import nc from 'next-connect';
 import multer from 'multer';
 import axios from 'axios';
-import FormData from 'form-data';
 
-const handler = nc();
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
-// Configure multer for file uploads
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB limit
-  },
+  limits: { fileSize: MAX_FILE_SIZE },
   fileFilter: (req, file, cb) => {
-    // Accept only image files
-    if (file.mimetype.startsWith('image/')) {
+    const allowedTypes = [
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+      'image/bmp',
+    ];
+
+    if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Only image files are allowed'), false);
+      cb(new Error('Upload a JPEG, PNG, WEBP, or BMP image.'));
     }
   },
 });
 
-// Disable body parser for this route
 export const config = {
-  api: {
-    bodyParser: false,
-  },
+  api: { bodyParser: false },
 };
 
-// Mock detection data based on file size parity
-const getMockDetection = (fileSize) => {
-  const isEven = fileSize % 2 === 0;
-  
-  if (isEven) {
-    return {
-      detections: [
-        {
-          label: 'aphid',
-          confidence: 0.87,
-          bbox: { x: 120, y: 80, width: 45, height: 35 }
-        }
-      ],
-      suggestions: [
-        'Aphids detected on your crop leaves',
-        'Apply neem oil spray every 7-10 days',
-        'Introduce beneficial insects like ladybugs',
-        'Remove heavily infested leaves manually',
-        'Ensure proper plant spacing for air circulation'
-      ]
-    };
-  } else {
-    return {
-      detections: [
-        {
-          label: 'leaf spot',
-          confidence: 0.92,
-          bbox: { x: 200, y: 150, width: 60, height: 40 }
-        }
-      ],
-      suggestions: [
-        'Leaf spot disease identified on your plants',
-        'Remove and destroy infected leaves immediately',
-        'Apply copper-based fungicide spray',
-        'Improve air circulation around plants',
-        'Avoid overhead watering to prevent spread',
-        'Ensure proper drainage to reduce humidity'
-      ]
-    };
-  }
-};
+const handler = nc({
+  onError(error, req, res) {
+    console.error('Pest API error:', error.message);
+
+    if (error instanceof multer.MulterError) {
+      return res.status(
+        error.code === 'LIMIT_FILE_SIZE' ? 413 : 400
+      ).json({
+        ok: false,
+        message:
+          error.code === 'LIMIT_FILE_SIZE'
+            ? 'Image must be smaller than 10 MB.'
+            : 'Unable to process uploaded image.',
+      });
+    }
+
+    return res.status(500).json({
+      ok: false,
+      message: error.message || 'Unexpected server error.',
+    });
+  },
+});
 
 handler.use(upload.single('image'));
 
 handler.post(async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({
+      ok: false,
+      message: 'Please upload an image.',
+    });
+  }
+
+  const apiKey = process.env.ROBOFLOW_API_KEY;
+  const modelId =
+    process.env.ROBOFLOW_MODEL ||
+    'plant-disease-detection-s2tyd/1';
+
+  if (!apiKey) {
+    return res.status(503).json({
+      ok: false,
+      message: 'Roboflow API key is missing. Configure ROBOFLOW_API_KEY.',
+    });
+  }
+
   try {
-    // Validate request method
-    if (req.method !== 'POST') {
-      return res.status(405).json({ 
-        error: 'Method not allowed',
-        message: 'Only POST requests are allowed' 
-      });
-    }
+    const imageBase64 = req.file.buffer.toString('base64');
 
-    // Validate file upload
-    if (!req.file) {
-      return res.status(400).json({ 
-        error: 'Image file required',
-        message: 'Please upload an image file for pest detection' 
-      });
-    }
+    const url =
+      `https://serverless.roboflow.com/${modelId}`;
 
-    const apiKey = process.env.ROBOFLOW_API_KEY;
-    const modelId = process.env.ROBOFLOW_MODEL;
-
-    // If no API key or model, return mock data
-    if (!apiKey || !modelId) {
-      console.log('Roboflow API key or model not found, returning mock data');
-      const mockData = getMockDetection(req.file.size);
-      
-      return res.status(200).json({
-        ok: true,
-        data: {
-          filename: req.file.originalname,
-          size: req.file.size,
-          detections: mockData.detections,
-          suggestions: mockData.suggestions,
-          source: 'mock'
-        }
-      });
-    }
-
-    console.log(`Processing pest detection for image: ${req.file.originalname}`);
-
-    // Prepare image for Roboflow API
-    const formData = new FormData();
-    formData.append('file', req.file.buffer, {
-      filename: req.file.originalname,
-      contentType: req.file.mimetype
-    });
-
-    // Call Roboflow detection API
-    const roboflowUrl = `https://detect.roboflow.com/${modelId}?api_key=${apiKey}`;
-    
-    const roboflowResponse = await axios.post(roboflowUrl, formData, {
+    const result = await axios.post(url, imageBase64, {
       headers: {
-        ...formData.getHeaders(),
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
       },
-      timeout: 30000 // 30 second timeout
+      timeout: 30000,
+      maxBodyLength: MAX_FILE_SIZE * 2,
     });
 
-    const detectionData = roboflowResponse.data;
+    const predictions = result.data?.predictions;
 
-    // Process Roboflow response
-    const detections = detectionData.predictions ? detectionData.predictions.map(pred => ({
-      label: pred.class,
-      confidence: Math.round(pred.confidence * 100) / 100,
+    if (!Array.isArray(predictions)) {
+      throw new Error('Unexpected response from Roboflow.');
+    }
+
+    const detections = predictions.map((prediction) => ({
+      label: String(prediction.class || 'Unknown'),
+      confidence: Number(prediction.confidence) || 0,
       bbox: {
-        x: Math.round(pred.x - pred.width / 2),
-        y: Math.round(pred.y - pred.height / 2),
-        width: Math.round(pred.width),
-        height: Math.round(pred.height)
-      }
-    })) : [];
+        x: Math.round(
+          (Number(prediction.x) || 0) -
+          (Number(prediction.width) || 0) / 2
+        ),
+        y: Math.round(
+          (Number(prediction.y) || 0) -
+          (Number(prediction.height) || 0) / 2
+        ),
+        width: Math.round(Number(prediction.width) || 0),
+        height: Math.round(Number(prediction.height) || 0),
+      },
+    }));
 
-    // Generate suggestions based on detected pests
-    const suggestions = [];
-    const detectedLabels = detections.map(d => d.label.toLowerCase());
-    
-    if (detectedLabels.includes('aphid')) {
-      suggestions.push(
-        'Aphids detected - Apply neem oil spray every 7-10 days',
-        'Introduce beneficial insects like ladybugs',
-        'Remove heavily infested leaves manually'
-      );
-    }
-    
-    if (detectedLabels.includes('leaf spot') || detectedLabels.includes('leafspot')) {
-      suggestions.push(
-        'Leaf spot disease identified - Remove infected leaves',
-        'Apply copper-based fungicide spray',
-        'Improve air circulation around plants'
-      );
-    }
-    
-    if (detectedLabels.includes('whitefly')) {
-      suggestions.push(
-        'Whiteflies detected - Use yellow sticky traps',
-        'Apply insecticidal soap spray',
-        'Introduce natural predators like Encarsia wasps'
-      );
-    }
-    
-    if (detectedLabels.includes('spider mite')) {
-      suggestions.push(
-        'Spider mites detected - Increase humidity levels',
-        'Apply miticide or neem oil treatment',
-        'Remove heavily infested plant parts'
-      );
-    }
+    const suggestions = detections.length
+      ? [
+          'Review the detected labels and inspect the affected plant.',
+          'AI predictions are preliminary; confirm the disease before treatment.',
+          'If possible, consult a local agricultural expert for treatment advice.',
+        ]
+      : [
+          'The model did not detect objects in its trained classes.',
+          'This does not guarantee the plant is healthy. Try a clearer image if symptoms remain.',
+        ];
 
-    // Add general suggestions if no specific pests detected
-    if (suggestions.length === 0) {
-      suggestions.push(
-        'No specific pests detected in this image',
-        'Continue regular monitoring of your crops',
-        'Maintain good plant hygiene and spacing',
-        'Consider preventive treatments during growing season'
-      );
-    }
-
-    console.log('Successfully processed pest detection with Roboflow');
-
-    res.status(200).json({
+    return res.status(200).json({
       ok: true,
       data: {
         filename: req.file.originalname,
         size: req.file.size,
         detections,
         suggestions,
-        source: 'roboflow'
-      }
+        source: 'roboflow',
+        warning:
+          'AI predictions may be incorrect. Confirm findings before applying crop treatments.',
+      },
     });
-
   } catch (error) {
-    console.error('Pest detection API error:', error);
-    
-    // Handle specific Roboflow API errors
-    if (error.response?.status === 401) {
-      return res.status(500).json({ 
-        error: 'Invalid API key',
-        message: 'Please check your ROBOFLOW_API_KEY environment variable' 
-      });
-    }
-    
-    if (error.response?.status === 429) {
-      return res.status(429).json({ 
-        error: 'API rate limit exceeded',
-        message: 'Please try again later' 
-      });
-    }
+    console.error(
+      'Roboflow request failed:',
+      error.response?.status || error.code || error.message
+    );
 
-    if (error.response?.status === 400) {
-      return res.status(400).json({ 
-        error: 'Invalid request',
-        message: 'Please check your image file and ROBOFLOW_MODEL configuration' 
-      });
-    }
-
-    // Handle network errors
-    if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
-      return res.status(503).json({ 
-        error: 'Service unavailable',
-        message: 'Unable to connect to pest detection service' 
-      });
-    }
-
-    // Handle timeout errors
     if (error.code === 'ECONNABORTED') {
-      return res.status(408).json({ 
-        error: 'Request timeout',
-        message: 'Pest detection service took too long to respond' 
+      return res.status(408).json({
+        ok: false,
+        message: 'Analysis timed out. Please try again.',
       });
     }
 
-    // Fallback to mock data on any error
-    console.log('Roboflow API call failed, returning mock data as fallback');
-    const mockData = getMockDetection(req.file?.size || 1000);
-    
-    res.status(200).json({
-      ok: true,
-      data: {
-        filename: req.file?.originalname || 'unknown',
-        size: req.file?.size || 1000,
-        detections: mockData.detections,
-        suggestions: mockData.suggestions,
-        source: 'fallback',
-        warning: 'Using mock data due to API error'
-      }
+    if (error.response?.status === 429) {
+      return res.status(429).json({
+        ok: false,
+        message: 'Roboflow rate limit reached. Try again later.',
+      });
+    }
+
+    if ([401, 403].includes(error.response?.status)) {
+      return res.status(502).json({
+        ok: false,
+        message: 'Roboflow rejected the API credentials. Check your API key.',
+      });
+    }
+
+    return res.status(502).json({
+      ok: false,
+      message: 'Crop analysis failed. Check the model configuration and try again.',
     });
   }
 });

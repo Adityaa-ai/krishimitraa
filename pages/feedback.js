@@ -1,65 +1,53 @@
+
 import { useState } from 'react';
 import Head from 'next/head';
 import Header from '../components/Header';
 
 export default function Feedback() {
-  const [type, setType] = useState('');
-  const [message, setMessage] = useState('');
-  const [rating, setRating] = useState('');
-  const [userInfo, setUserInfo] = useState('');
-  const [response, setResponse] = useState(null);
+  const [form, setForm] = useState({
+    name: '',
+    category: 'General Feedback',
+    rating: '5',
+    message: '',
+  });
+
+  const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
 
-  const feedbackTypes = [
-    { value: 'bug', label: 'Bug Report' },
-    { value: 'feature', label: 'Feature Request' },
-    { value: 'general', label: 'General Feedback' },
-    { value: 'complaint', label: 'Complaint' },
-    { value: 'suggestion', label: 'Suggestion' }
-  ];
+  const updateField = (event) => {
+    setForm((previous) => ({
+      ...previous,
+      [event.target.name]: event.target.value,
+    }));
+  };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    
-    if (!type || !message) {
-      setError('Please select a feedback type and enter your message');
-      return;
-    }
-
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    setStatus('');
     setLoading(true);
-    setError(null);
-    setResponse(null);
 
     try {
       const response = await fetch('/api/feedback', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          type,
-          message,
-          rating: rating ? parseInt(rating) : undefined,
-          userInfo: userInfo || undefined
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
       });
 
       const data = await response.json();
 
-      if (!response.ok) {
-        throw new Error(data.message || 'Failed to submit feedback');
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || 'Could not submit feedback.');
       }
 
-      setResponse(data);
-      
-      // Reset form on success
-      setType('');
-      setMessage('');
-      setRating('');
-      setUserInfo('');
-    } catch (err) {
-      setError(err.message);
+      setStatus('success');
+      setForm({
+        name: '',
+        category: 'General Feedback',
+        rating: '5',
+        message: '',
+      });
+    } catch (error) {
+      setStatus(error.message || 'Something went wrong. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -68,195 +56,183 @@ export default function Feedback() {
   return (
     <>
       <Head>
-        <title>Feedback - Krishi Mitra</title>
-        <meta name="description" content="Share your experience and suggestions" />
+        <title>Feedback | KrishiSethuu</title>
+        <meta
+          name="description"
+          content="Share feedback to help improve KrishiSethuu for farmers."
+        />
       </Head>
 
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-stone-50">
         <Header />
-        
-        <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="text-center mb-8">
-            <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
-              Feedback
-            </h1>
-            <p className="text-lg text-gray-600">
-              Help us improve by sharing your experience and suggestions
+
+        <main className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
+          <section className="mb-8 rounded-3xl bg-green-900 px-6 py-10 text-white sm:px-10">
+            <p className="text-sm font-semibold uppercase tracking-widest text-green-200">
+              Your voice matters
             </p>
-          </div>
+            <h1 className="mt-3 text-3xl font-bold sm:text-5xl">
+              Help us grow better.
+            </h1>
+            <p className="mt-4 max-w-2xl leading-relaxed text-green-100">
+              Tell us about your experience with KrishiSethuu. Your feedback
+              helps us improve farming information and make the platform
+              easier to use.
+            </p>
+          </section>
 
-          {/* Feedback Form */}
-          <div className="card mb-8">
-            <form onSubmit={handleSubmit} className="space-y-6">
-              {/* Feedback Type */}
-              <div>
-                <label htmlFor="type" className="block text-sm font-medium text-gray-700 mb-2">
-                  Feedback Type *
-                </label>
-                <select
-                  id="type"
-                  value={type}
-                  onChange={(e) => setType(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  required
-                >
-                  <option value="">Select feedback type</option>
-                  {feedbackTypes.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
+          <div className="grid gap-6 md:grid-cols-5">
+            <section className="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm md:col-span-3 sm:p-8">
+              <h2 className="text-xl font-bold text-gray-900">
+                Share your feedback
+              </h2>
+              <p className="mt-2 text-sm text-gray-500">
+                Fields marked * are required.
+              </p>
 
-              {/* Message */}
-              <div>
-                <label htmlFor="message" className="block text-sm font-medium text-gray-700 mb-2">
-                  Your Message *
-                </label>
-                <textarea
-                  id="message"
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  rows={4}
-                  placeholder="Please describe your feedback in detail..."
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  required
-                />
-              </div>
-
-              {/* Rating */}
-              <div>
-                <label htmlFor="rating" className="block text-sm font-medium text-gray-700 mb-2">
-                  Rating (Optional)
-                </label>
-                <select
-                  id="rating"
-                  value={rating}
-                  onChange={(e) => setRating(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                >
-                  <option value="">Select rating</option>
-                  <option value="5">5 - Excellent</option>
-                  <option value="4">4 - Very Good</option>
-                  <option value="3">3 - Good</option>
-                  <option value="2">2 - Fair</option>
-                  <option value="1">1 - Poor</option>
-                </select>
-              </div>
-
-              {/* User Info */}
-              <div>
-                <label htmlFor="userInfo" className="block text-sm font-medium text-gray-700 mb-2">
-                  Contact Information (Optional)
-                </label>
-                <input
-                  type="text"
-                  id="userInfo"
-                  value={userInfo}
-                  onChange={(e) => setUserInfo(e.target.value)}
-                  placeholder="Email or phone number (optional)"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                />
-              </div>
-
-              {/* Submit Button */}
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {loading ? 'Submitting...' : 'Submit Feedback'}
-              </button>
-            </form>
-          </div>
-
-          {/* Error Display */}
-          {error && (
-            <div className="card mb-8 bg-red-50 border-red-200">
-              <div className="text-red-800">
-                <strong>Error:</strong> {error}
-              </div>
-            </div>
-          )}
-
-          {/* Success Response */}
-          {response && (
-            <div className="card mb-8 bg-green-50 border-green-200">
-              <div className="text-green-800">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-2xl">✅</span>
-                  <strong>Thank you for your feedback!</strong>
+              <form onSubmit={handleSubmit} className="mt-6 space-y-5">
+                <div>
+                  <label htmlFor="name" className="mb-2 block text-sm font-medium text-gray-700">
+                    Name (optional)
+                  </label>
+                  <input
+                    id="name"
+                    name="name"
+                    value={form.name}
+                    onChange={updateField}
+                    maxLength={80}
+                    placeholder="Your name"
+                    className="w-full rounded-xl border border-gray-300 px-4 py-3"
+                  />
                 </div>
-                <p>Your feedback has been submitted successfully. We appreciate your input and will use it to improve our platform.</p>
-                {response.feedbackType && (
-                  <p className="mt-2 text-sm">
-                    <strong>Type:</strong> {response.feedbackType}
+
+                <div>
+                  <label htmlFor="category" className="mb-2 block text-sm font-medium text-gray-700">
+                    What is your feedback about? *
+                  </label>
+                  <select
+                    id="category"
+                    name="category"
+                    value={form.category}
+                    onChange={updateField}
+                    className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3"
+                  >
+                    <option>General Feedback</option>
+                    <option>AI Assistant</option>
+                    <option>Weather Information</option>
+                    <option>Crop Health Detection</option>
+                    <option>Mandi Prices</option>
+                    <option>Website Design</option>
+                    <option>Bug Report</option>
+                    <option>Feature Request</option>
+                  </select>
+                </div>
+
+                <fieldset>
+                  <legend className="mb-2 text-sm font-medium text-gray-700">
+                    Overall experience *
+                  </legend>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      ['1', '★', 'Poor'],
+                      ['2', '★★', 'Fair'],
+                      ['3', '★★★', 'Good'],
+                      ['4', '★★★★', 'Very good'],
+                      ['5', '★★★★★', 'Excellent'],
+                    ].map(([value, stars, label]) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() =>
+                          setForm((previous) => ({ ...previous, rating: value }))
+                        }
+                        aria-pressed={form.rating === value}
+                        className={`rounded-xl border px-3 py-2 text-sm ${
+                          form.rating === value
+                            ? 'border-green-800 bg-green-50 text-green-900'
+                            : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                        }`}
+                      >
+                        <span className="block text-amber-500">{stars}</span>
+                        <span>{label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </fieldset>
+
+                <div>
+                  <label htmlFor="message" className="mb-2 block text-sm font-medium text-gray-700">
+                    Your comments or suggestions *
+                  </label>
+                  <textarea
+                    id="message"
+                    name="message"
+                    required
+                    minLength={5}
+                    maxLength={2000}
+                    rows={5}
+                    value={form.message}
+                    onChange={updateField}
+                    placeholder="Tell us what worked well or what we can improve..."
+                    className="w-full resize-y rounded-xl border border-gray-300 px-4 py-3"
+                  />
+                  <p className="mt-1 text-right text-xs text-gray-400">
+                    {form.message.length}/2000
+                  </p>
+                </div>
+
+                {status === 'success' && (
+                  <p role="status" className="rounded-xl bg-green-50 p-4 text-sm text-green-800">
+                    Thank you! Your feedback has been received.
                   </p>
                 )}
-              </div>
-            </div>
-          )}
 
-          {/* Project Overview */}
-          <div className="card mb-8">
-            <h2 className="text-2xl font-bold text-gray-900 mb-4">About the Project</h2>
-            <p className="text-gray-700 leading-relaxed">
-              Our project is an AI-powered multilingual agriculture advisory platform. It provides farmers with personalized crop guidance, weather alerts, pest detection, market price tracking, and voice support in local languages. The goal is to empower small and marginal farmers with real-time, accessible insights.
-            </p>
-          </div>
+                {status && status !== 'success' && (
+                  <p role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-800">
+                    {status}
+                  </p>
+                )}
 
-          {/* Team Members */}
-          <div className="card">
-            <h2 className="text-2xl font-bold text-gray-900 mb-6">Our Team</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div className="bg-gradient-to-br from-green-50 to-green-100 p-4 rounded-lg border border-green-200">
-                <div className="text-center">
-                  <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-3">
-                    <span className="text-white font-bold text-lg">YK</span>
-                  </div>
-                  <h3 className="font-semibold text-gray-900">Yash Khade</h3>
-                </div>
+                <button
+                  type="submit"
+                  disabled={loading || form.message.trim().length < 5}
+                  className="w-full rounded-xl bg-green-800 px-5 py-3 font-semibold text-white hover:bg-green-900 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {loading ? 'Submitting...' : 'Submit feedback'}
+                </button>
+              </form>
+            </section>
+
+            <aside className="space-y-4 md:col-span-2">
+              <div className="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm">
+                <div className="text-3xl">🌱</div>
+                <h2 className="mt-3 text-lg font-bold text-gray-900">
+                  Built for farmers
+                </h2>
+                <p className="mt-2 text-sm leading-relaxed text-gray-600">
+                  Your suggestions help us make agricultural information
+                  clearer, more useful, and easier to access.
+                </p>
               </div>
-              
-              <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-4 rounded-lg border border-blue-200">
-                <div className="text-center">
-                  <div className="w-12 h-12 bg-blue-500 rounded-full flex items-center justify-center mx-auto mb-3">
-                    <span className="text-white font-bold text-lg">HS</span>
-                  </div>
-                  <h3 className="font-semibold text-gray-900">Harsh Savnerkar</h3>
-                </div>
+
+              <div className="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm">
+                <div className="text-3xl">💡</div>
+                <h2 className="mt-3 text-lg font-bold text-gray-900">
+                  What can you share?
+                </h2>
+                <ul className="mt-3 space-y-2 text-sm text-gray-600">
+                  <li>• Features you'd like to see</li>
+                  <li>• Problems or incorrect information</li>
+                  <li>• Ways to improve usability</li>
+                  <li>• Ideas for local farming support</li>
+                </ul>
               </div>
-              
-              <div className="bg-gradient-to-br from-purple-50 to-purple-100 p-4 rounded-lg border border-purple-200">
-                <div className="text-center">
-                  <div className="w-12 h-12 bg-purple-500 rounded-full flex items-center justify-center mx-auto mb-3">
-                    <span className="text-white font-bold text-lg">SG</span>
-                  </div>
-                  <h3 className="font-semibold text-gray-900">Soham Girkar</h3>
-                </div>
-              </div>
-              
-              <div className="bg-gradient-to-br from-orange-50 to-orange-100 p-4 rounded-lg border border-orange-200">
-                <div className="text-center">
-                  <div className="w-12 h-12 bg-orange-500 rounded-full flex items-center justify-center mx-auto mb-3">
-                    <span className="text-white font-bold text-lg">VS</span>
-                  </div>
-                  <h3 className="font-semibold text-gray-900">Vedant Shinde</h3>
-                </div>
-              </div>
-              
-              <div className="bg-gradient-to-br from-teal-50 to-teal-100 p-4 rounded-lg border border-teal-200">
-                <div className="text-center">
-                  <div className="w-12 h-12 bg-teal-500 rounded-full flex items-center justify-center mx-auto mb-3">
-                    <span className="text-white font-bold text-lg">PM</span>
-                  </div>
-                  <h3 className="font-semibold text-gray-900">Pranjal Mohare</h3>
-                </div>
-              </div>
-              
-          
-            </div>
+
+              <p className="px-1 text-xs leading-relaxed text-gray-500">
+                Please avoid including passwords, financial details, or other
+                sensitive personal information.
+              </p>
+            </aside>
           </div>
         </main>
       </div>

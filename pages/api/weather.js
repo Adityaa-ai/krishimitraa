@@ -1,178 +1,165 @@
+
 import nc from 'next-connect';
 import axios from 'axios';
 
 const handler = nc();
 
+function getWeatherDescription(code) {
+  const descriptions = {
+    0: 'Clear sky',
+    1: 'Mainly clear',
+    2: 'Partly cloudy',
+    3: 'Overcast',
+    45: 'Fog',
+    48: 'Depositing rime fog',
+    51: 'Light drizzle',
+    53: 'Moderate drizzle',
+    55: 'Dense drizzle',
+    61: 'Slight rain',
+    63: 'Moderate rain',
+    65: 'Heavy rain',
+    71: 'Slight snow',
+    73: 'Moderate snow',
+    75: 'Heavy snow',
+    80: 'Slight rain showers',
+    81: 'Moderate rain showers',
+    82: 'Violent rain showers',
+    95: 'Thunderstorm',
+    96: 'Thunderstorm with hail',
+    99: 'Severe thunderstorm with hail',
+  };
+
+  return descriptions[code] || 'Unknown weather conditions';
+}
+
 handler.post(async (req, res) => {
   try {
-    // Validate request method
-    if (req.method !== 'POST') {
-      return res.status(405).json({ 
-        error: 'Method not allowed',
-        message: 'Only POST requests are allowed' 
-      });
-    }
+    const { lat, lon } = req.body || {};
 
-    // Validate required fields
-    const { lat, lon } = req.body;
-    
-    if (!lat || !lon) {
-      return res.status(400).json({ 
-        error: 'Missing coordinates',
-        message: 'Both latitude (lat) and longitude (lon) are required' 
-      });
-    }
-
-    // Validate coordinate ranges
-    if (typeof lat !== 'number' || lat < -90 || lat > 90) {
-      return res.status(400).json({ 
-        error: 'Invalid latitude',
-        message: 'Latitude must be a number between -90 and 90' 
-      });
-    }
-    
-    if (typeof lon !== 'number' || lon < -180 || lon > 180) {
-      return res.status(400).json({ 
-        error: 'Invalid longitude',
-        message: 'Longitude must be a number between -180 and 180' 
-      });
-    }
-
-    const apiKey = process.env.OPENWEATHER_API_KEY;
-
-    // If no API key, return sample data
-    if (!apiKey) {
-      console.log('OpenWeather API key not found, returning sample data');
-      const sampleData = {
-        location: "Sample City",
-        temp: 25.5,
-        description: "clear sky",
-        humidity: 65,
-        rainProbability: 15,
-        alerts: []
-      };
-      
-      return res.status(200).json({
-        ok: true,
-        data: sampleData,
-        source: 'sample'
-      });
-    }
-
-    console.log(`Fetching weather data for coordinates: ${lat}, ${lon}`);
-
-    // Call OpenWeather free API endpoint
-    const weatherUrl = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${apiKey}&units=metric`;
-    
-    const weatherResponse = await axios.get(weatherUrl);
-    const weatherData = weatherResponse.data;
-
-    // Extract required data from OpenWeather response
-    const location = weatherData.name;
-    const temp = Math.round(weatherData.main.temp * 10) / 10; // Round to 1 decimal
-    const description = weatherData.weather[0].description;
-    const humidity = weatherData.main.humidity;
-
-    // Generate random rain probability (0-100%)
-    const rainProbability = Math.floor(Math.random() * 101);
-
-    // Generate alerts based on conditions
-    const alerts = [];
-    
-    // Check for rain-related alerts
-    if (description.toLowerCase().includes('rain')) {
-      alerts.push({
-        event: "Heavy Rain Alert",
-        description: "Heavy rainfall expected. Consider postponing outdoor farming activities and ensure proper drainage.",
-        severity: "moderate"
-      });
-    }
-    
-    // Check for temperature alerts
-    if (temp > 35) {
-      alerts.push({
-        event: "Heatwave Alert",
-        description: "Extreme heat conditions detected. Ensure adequate irrigation and protect crops from heat stress.",
-        severity: "high"
-      });
-    } else if (temp < 10) {
-      alerts.push({
-        event: "Cold Wave Alert",
-        description: "Cold weather conditions detected. Consider protecting sensitive crops and adjusting irrigation schedules.",
-        severity: "moderate"
-      });
-    }
-
-    // Add rain probability alert if high
-    if (rainProbability > 70) {
-      alerts.push({
-        event: "High Rain Probability",
-        description: `High probability of rain (${rainProbability}%). Plan irrigation and harvesting activities accordingly.`,
-        severity: "low"
-      });
-    }
-
-    const responseData = {
-      location,
-      temp,
-      description,
-      humidity,
-      rainProbability,
-      alerts
-    };
-
-    console.log('Successfully fetched weather data from OpenWeather API');
-
-    res.status(200).json({
-      ok: true,
-      data: responseData,
-      source: 'openweather'
-    });
-
-  } catch (error) {
-    console.error('Weather API error:', error);
-    
-    // Handle specific OpenWeather API errors
-    if (error.response?.status === 401) {
-      return res.status(500).json({ 
-        error: 'Invalid API key',
-        message: 'Please check your OPENWEATHER_API_KEY environment variable' 
-      });
-    }
-    
-    if (error.response?.status === 429) {
-      return res.status(429).json({ 
-        error: 'API rate limit exceeded',
-        message: 'Please try again later' 
-      });
-    }
-
-    if (error.response?.status === 400) {
-      return res.status(400).json({ 
+    if (
+      typeof lat !== 'number' ||
+      !Number.isFinite(lat) ||
+      lat < -90 ||
+      lat > 90 ||
+      typeof lon !== 'number' ||
+      !Number.isFinite(lon) ||
+      lon < -180 ||
+      lon > 180
+    ) {
+      return res.status(400).json({
         error: 'Invalid coordinates',
-        message: 'Please check the latitude and longitude values' 
+        message: 'Latitude and longitude must be valid numbers.',
       });
     }
 
-    if (error.response?.status === 404) {
-      return res.status(404).json({ 
-        error: 'Location not found',
-        message: 'No weather data available for the provided coordinates' 
+    // Fetch actual weather data from Open-Meteo.
+    const response = await axios.get(
+      'https://api.open-meteo.com/v1/forecast',
+      {
+        params: {
+          latitude: lat,
+          longitude: lon,
+          current: [
+            'temperature_2m',
+            'relative_humidity_2m',
+            'apparent_temperature',
+            'precipitation',
+            'weather_code',
+            'wind_speed_10m',
+          ].join(','),
+          hourly: 'precipitation_probability',
+          forecast_days: 1,
+          timezone: 'auto',
+        },
+        timeout: 15000,
+      }
+    );
+
+    const weather = response.data;
+    const current = weather.current;
+
+    if (!current || !Array.isArray(weather.hourly?.time)) {
+      throw new Error('Incomplete weather response');
+    }
+
+    // Match the current observation to its forecast hour.
+    const currentHour = current.time.slice(0, 13);
+    let index = weather.hourly.time.findIndex(
+      (time) => time.slice(0, 13) === currentHour
+    );
+
+    if (index < 0) {
+      index = weather.hourly.time.findIndex(
+        (time) => time >= current.time
+      );
+    }
+
+    const rainProbability =
+      index >= 0
+        ? weather.hourly.precipitation_probability?.[index] ?? null
+        : null;
+
+    const temp = current.temperature_2m;
+    const humidity = current.relative_humidity_2m;
+    const description = getWeatherDescription(current.weather_code);
+
+    // These are project-generated advisories, not official weather warnings.
+    const alerts = [];
+
+    if (temp >= 35) {
+      alerts.push({
+        event: 'High Temperature Advisory',
+        description:
+          'High temperatures detected. Monitor crops for heat stress.',
+        severity: 'moderate',
       });
     }
 
-    // Handle network errors
-    if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
-      return res.status(503).json({ 
-        error: 'Service unavailable',
-        message: 'Unable to connect to weather service' 
+    if (rainProbability !== null && rainProbability >= 70) {
+      alerts.push({
+        event: 'High Rain Probability',
+        description:
+          `Forecast precipitation probability is ${rainProbability}%.`,
+        severity: 'moderate',
       });
     }
 
-    // Generic error fallback
-    res.status(500).json({ 
-      error: 'Internal server error',
-      message: error.message || 'An unexpected error occurred' 
+    if (current.weather_code >= 95 && current.weather_code <= 99) {
+      alerts.push({
+        event: 'Thunderstorm',
+        description:
+          'Thunderstorm conditions reported. Avoid exposed field work during lightning.',
+        severity: 'severe',
+      });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      source: 'open-meteo',
+      data: {
+        location: `Lat ${lat.toFixed(4)}, Lon ${lon.toFixed(4)}`,
+        temp,
+        description,
+        humidity,
+        rainProbability,
+        alerts,
+        feelsLike: current.apparent_temperature,
+        windSpeed: current.wind_speed_10m,
+        precipitation: current.precipitation,
+        observedAt: current.time,
+        timezone: weather.timezone,
+      },
+    });
+  } catch (error) {
+    console.error(
+      'Weather API error:',
+      error.response?.data || error.message
+    );
+
+    return res.status(502).json({
+      error: 'Weather service unavailable',
+      message:
+        'Could not retrieve live weather. Please try again shortly.',
     });
   }
 });

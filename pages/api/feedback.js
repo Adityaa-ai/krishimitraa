@@ -1,65 +1,77 @@
+
 import nc from 'next-connect';
 
 const handler = nc();
 
+const validCategories = [
+  'General Feedback',
+  'AI Assistant',
+  'Weather Information',
+  'Crop Health Detection',
+  'Mandi Prices',
+  'Website Design',
+  'Bug Report',
+  'Feature Request',
+];
+
 handler.post(async (req, res) => {
   try {
-    // Validate request method
-    if (req.method !== 'POST') {
-      return res.status(405).json({ error: 'Method not allowed' });
-    }
+    const { name, category, rating, message } = req.body || {};
 
-    // Validate required fields
-    const { type, message, rating, userInfo } = req.body;
-    
-    if (!type || !message) {
-      return res.status(400).json({ 
-        error: 'Type and message are required for feedback submission' 
+    if (
+      typeof message !== 'string' ||
+      message.trim().length < 5 ||
+      message.trim().length > 2000
+    ) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Feedback must be between 5 and 2000 characters.',
       });
     }
 
-    // Validate feedback type
-    const validTypes = ['bug', 'feature', 'general', 'complaint', 'suggestion'];
-    if (!validTypes.includes(type)) {
-      return res.status(400).json({ 
-        error: `Invalid feedback type. Must be one of: ${validTypes.join(', ')}` 
+    if (!validCategories.includes(category)) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Please select a valid feedback category.',
       });
     }
 
-    // Validate rating if provided
-    if (rating && (rating < 1 || rating > 5)) {
-      return res.status(400).json({ 
-        error: 'Rating must be between 1 and 5' 
+    const numericRating = Number(rating);
+
+    if (
+      rating == null ||
+      rating === '' ||
+      !Number.isInteger(numericRating) ||
+      numericRating < 1 ||
+      numericRating > 5
+    ) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Rating must be between 1 and 5.',
       });
     }
 
-    // TODO: Implement feedback storage
-    // This could save to a database, send to email, or integrate with a feedback system
-    // const feedbackData = {
-    //   type,
-    //   message,
-    //   rating: rating || null,
-    //   userInfo: userInfo || null,
-    //   timestamp: new Date().toISOString(),
-    //   ip: req.ip,
-    //   userAgent: req.headers['user-agent']
-    // };
-    
-    // await saveFeedback(feedbackData);
-
-    // For now, return success response
-    res.status(200).json({ 
-      ok: true,
-      message: 'Feedback API endpoint ready',
-      feedbackType: type,
-      // feedbackId: feedbackData.id // Uncomment when implementing actual storage
+    // No database or persistent storage is configured yet.
+    // Do not report successful storage until persistence is implemented.
+    console.log('Feedback received:', {
+      name: typeof name === 'string' ? name.trim().slice(0, 80) : '',
+      category,
+      rating: numericRating,
+      message: message.trim(),
+      receivedAt: new Date().toISOString(),
     });
 
+    return res.status(200).json({
+      ok: true,
+      message: 'Feedback received by the server. Persistent storage is not configured yet.',
+      saved: false,
+    });
   } catch (error) {
-    console.error('Feedback API error:', error);
-    res.status(500).json({ 
-      error: 'Internal server error',
-      message: error.message 
+    console.error('Feedback API error:', error.message);
+
+    return res.status(500).json({
+      ok: false,
+      error: 'Unable to process feedback right now. Please try again.',
     });
   }
 });
