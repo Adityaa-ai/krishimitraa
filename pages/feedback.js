@@ -221,7 +221,7 @@ export default function Feedback() {
                   What can you share?
                 </h2>
                 <ul className="mt-3 space-y-2 text-sm text-gray-600">
-                  <li>• Features you'd like to see</li>
+                  <li>• Features you&apos;d like to see</li>
                   <li>• Problems or incorrect information</li>
                   <li>• Ways to improve usability</li>
                   <li>• Ideas for local farming support</li>

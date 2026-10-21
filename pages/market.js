@@ -272,7 +272,7 @@ export default function Market() {
 
               <p className="mt-4 text-xs leading-5 text-gray-500">
                 Prices reflect the records returned by the government dataset;
-                they may not be today's prices or a guaranteed sale price.
+                they may not be today&apos;s prices or a guaranteed sale price.
                 Confirm the latest rate with your local mandi before selling.
               </p>
             </section>
